@@ -1,0 +1,40 @@
+# Cloudflare Tunnel Configuration for HDFS WebHDFS
+# ================================================
+# 
+# SETUP INSTRUCTIONS:
+# 1. Install cloudflared: winget install Cloudflare.cloudflared
+# 2. Login: cloudflared tunnel login
+# 3. Create tunnel: cloudflared tunnel create hdfs-tunnel
+# 4. Copy the credentials JSON file to this folder
+# 5. Update this config with your tunnel ID and domain
+# 6. Route DNS: cloudflared tunnel route dns hdfs-tunnel hdfs.yourdomain.com
+#
+# Then run: docker-compose --profile named-tunnel up -d
+
+# Your tunnel name (from 'cloudflared tunnel create hdfs-tunnel')
+tunnel: hdfs-tunnel
+
+# Path to credentials file (copy from ~/.cloudflared/<tunnel-id>.json)
+# Update <TUNNEL-ID> with your actual tunnel ID
+credentials-file: /etc/cloudflared/<TUNNEL-ID>.json
+
+# Ingress rules - map hostnames to services
+ingress:
+  # WebHDFS API endpoint (for programmatic access)
+  # Update 'hdfs.yourdomain.com' with your actual domain
+  - hostname: hdfs.yourdomain.com
+    service: http://namenode:9870
+    originRequest:
+      # Allow large file uploads
+      httpHostHeader: namenode:9870
+      noTLSVerify: true
+  
+  # DataNode access (optional - for direct data access)
+  # - hostname: hdfs-data.yourdomain.com
+  #   service: http://datanode:9864
+  
+  # Catch-all rule (required)
+  - service: http_status:404
+
+# Optional: Disable QUIC if you have issues
+# protocol: http2

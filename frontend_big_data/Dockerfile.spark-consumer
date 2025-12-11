@@ -1,0 +1,23 @@
+# Dockerfile for Spark Kafka Consumer
+FROM apache/spark:3.5.0-python3
+
+USER root
+
+# Install Python dependencies
+RUN pip install --no-cache-dir \
+    kafka-python \
+    pyspark==3.5.0 \
+    pandas \
+    numpy
+
+# Copy application files
+WORKDIR /app
+COPY spark_kafka_consumer.py .
+COPY hdfs_inference_client.py .
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYSPARK_PYTHON=python3
+ENV PYSPARK_DRIVER_PYTHON=python3
+
+USER spark

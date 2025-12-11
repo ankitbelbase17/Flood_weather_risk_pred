@@ -1,0 +1,28 @@
+# Core Data Science
+pandas
+numpy
+scikit-learn
+xgboost
+matplotlib
+seaborn
+torch
+shap
+joblib
+fastparquet
+pyarrow
+
+# Web/API
+gradio
+fastapi
+uvicorn
+requests
+
+# Streaming
+kafka-python
+cassandra-driver
+
+# Spark (for HDFS integration)
+pyspark==3.5.0
+
+# Utils
+python-dotenv

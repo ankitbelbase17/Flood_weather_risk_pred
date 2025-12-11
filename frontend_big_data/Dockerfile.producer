@@ -1,0 +1,20 @@
+# Dockerfile for Kafka Producer API
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application files
+COPY kafka_producer_api.py .
+COPY utils.py .
+
+# Expose port
+EXPOSE 8000
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+
+CMD ["python", "kafka_producer_api.py"]

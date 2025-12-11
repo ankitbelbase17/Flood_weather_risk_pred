@@ -1,7 +1,0 @@
-apache-airflow==2.7.2
-pyspark==3.3.0
-hdfs
-pandas
-numpy
-scikit-learn
-torch

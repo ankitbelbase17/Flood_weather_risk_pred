@@ -1,0 +1,236 @@
+version: '3.8'
+
+# ============================================================================
+# INTEGRATED FLOOD AND HEATWAVE PREDICTION SYSTEM
+# Frontend + Kafka + Spark + HDFS + Cassandra
+# ============================================================================
+
+services:
+  # ============================================
+  # ZOOKEEPER - Required for Kafka
+  # ============================================
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - flood-network
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ============================================
+  # KAFKA BROKER
+  # ============================================
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_MESSAGE_MAX_BYTES: 10485760
+      KAFKA_LOG_RETENTION_HOURS: 24
+    networks:
+      - flood-network
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # ============================================
+  # KAFKA UI (visualization)
+  # ============================================
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: flood-prediction-cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    networks:
+      - flood-network
+
+  # ============================================
+  # HDFS NAMENODE
+  # ============================================
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    restart: always
+    ports:
+      - "9870:9870"
+      - "9000:9000"
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
+      - ./data:/data
+    environment:
+      - CLUSTER_NAME=flood-prediction-cluster
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    networks:
+      - flood-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9870"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================
+  # HDFS DATANODE
+  # ============================================
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    restart: always
+    ports:
+      - "9864:9864"
+    volumes:
+      - hadoop_datanode:/hadoop/dfs/data
+    environment:
+      SERVICE_PRECONDITION: "namenode:9870"
+      CORE_CONF_fs_defaultFS: hdfs://namenode:9000
+    networks:
+      - flood-network
+    depends_on:
+      namenode:
+        condition: service_healthy
+
+  # ============================================
+  # SPARK MASTER
+  # ============================================
+  spark-master:
+    image: apache/spark:3.5.0
+    container_name: spark-master
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    ports:
+      - "8081:8080"
+      - "7077:7077"
+    environment:
+      - SPARK_MASTER_HOST=spark-master
+    networks:
+      - flood-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================
+  # SPARK WORKER
+  # ============================================
+  spark-worker:
+    image: apache/spark:3.5.0
+    container_name: spark-worker
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    environment:
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_CORES=2
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    networks:
+      - flood-network
+
+  # ============================================
+  # CASSANDRA (persistence for streaming data)
+  # ============================================
+  cassandra:
+    image: cassandra:4.1
+    container_name: cassandra
+    ports:
+      - "9042:9042"
+    environment:
+      - CASSANDRA_CLUSTER_NAME=FloodPredictionCluster
+      - CASSANDRA_DC=dc1
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+    networks:
+      - flood-network
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "describe cluster"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ============================================
+  # SPARK KAFKA CONSUMER (Batch of 100 to HDFS)
+  # ============================================
+  spark-kafka-consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark-consumer
+    container_name: spark-kafka-consumer
+    depends_on:
+      kafka:
+        condition: service_healthy
+      namenode:
+        condition: service_healthy
+      spark-master:
+        condition: service_healthy
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - KAFKA_TOPIC=weather-data
+      - KAFKA_BATCH_SIZE=100
+      - HDFS_NAMENODE=hdfs://namenode:9000
+      - HDFS_BASE_PATH=hdfs://namenode:9000/user/airflow/weather_data
+      - SPARK_MASTER=spark://spark-master:7077
+    networks:
+      - flood-network
+    command: ["python", "spark_kafka_consumer.py", "--mode", "micro", "--batch-size", "100", "--interval", "10"]
+    profiles:
+      - consumer
+
+  # ============================================
+  # KAFKA PRODUCER API (Weather Data Input)
+  # ============================================
+  kafka-producer-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.producer
+    container_name: kafka-producer-api
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - KAFKA_TOPIC=weather-data
+    networks:
+      - flood-network
+    command: ["python", "kafka_producer_api.py"]
+    profiles:
+      - producer
+
+networks:
+  flood-network:
+    driver: bridge
+    name: flood-prediction-network
+
+volumes:
+  cassandra-data:
+  hadoop_namenode:
+  hadoop_datanode:

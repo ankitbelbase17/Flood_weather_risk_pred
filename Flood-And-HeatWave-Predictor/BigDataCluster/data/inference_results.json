@@ -1,0 +1,39 @@
+{
+    "last_updated": null,
+    "inference_count": 0,
+    "models": {
+        "xgboost": {
+            "heatwave": {
+                "status": "pending",
+                "last_run": null,
+                "predictions": {}
+            },
+            "flood": {
+                "status": "pending",
+                "last_run": null,
+                "predictions": {}
+            }
+        },
+        "lstm": {
+            "heatwave": {
+                "status": "pending",
+                "last_run": null,
+                "predictions": {}
+            },
+            "flood": {
+                "status": "pending",
+                "last_run": null,
+                "predictions": {}
+            }
+        }
+    },
+    "districts": {},
+    "latest_predictions": {
+        "by_district": {},
+        "summary": {
+            "high_risk_heatwave": 0,
+            "high_risk_flood": 0,
+            "total_predictions": 0
+        }
+    }
+}
